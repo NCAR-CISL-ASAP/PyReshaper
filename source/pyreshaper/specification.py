@@ -13,7 +13,6 @@ See the LICENSE.rst file for details
 # Built-in imports
 from os import path as ospath
 
-
 #==============================================================================
 # create_specifier factory function
 #==============================================================================
@@ -46,8 +45,10 @@ class Specifier(object):
     def __init__(self,
                  infiles=[],
                  ncfmt='netcdf4c',
+                 deflate=3,
                  prefix='tseries.',
                  suffix='.nc',
+                 outdir=None,
                  metadata=[],
                  **kwargs):
         """
@@ -64,10 +65,12 @@ class Specifier(object):
             infiles (list): List of full-path input filenames
             ncfmt (str): String specifying the NetCDF
                 data format ('netcdf','netcdf4','netcdf4c')
+            deflate (int): Compression level
             prefix (str): String specifying the full-path prefix common
                 to all time-series output files
-            suffix (str): String specifying the suffix common
+            suffix (str): String specifying the (base filename) suffix common
                 to all time-series output files
+            outdir (str): Output directory
             metadata (list): List of variable names specifying the
                 variables that should be included in every
                 time-series output file
@@ -81,6 +84,9 @@ class Specifier(object):
         # The string specifying the NetCDF file format for output
         self.netcdf_format = ncfmt
 
+        # Compression level for the output files
+        self.netcdf_deflate = deflate
+
         # The common prefix to all output files (following the rule:
         #  prefix + variable_name + suffix)
         self.output_file_prefix = prefix
@@ -88,6 +94,9 @@ class Specifier(object):
         # The common suffix to all output files (following the rule:
         #  prefix + variable_name + suffix)
         self.output_file_suffix = suffix
+
+        # The directory where the output files will be placed
+        self.output_directory   = outdir
 
         # List of time-variant variables that should be included in all
         #  output files.
@@ -129,6 +138,12 @@ class Specifier(object):
         if not isinstance(self.netcdf_format, str):
             err_msg = "NetCDF format must be given as a string"
             raise TypeError(err_msg)
+
+        # Validate that format is compatible with compression
+        if (self.netcdf_format != "netcdf4c"):
+            if (self.netcdf_deflate != 0):
+                print("Warning: Ignoring compression because output file-format"
+                      "is '{0}'".format(self.netcdf_format))
 
         # Validate the output file prefix
         if not isinstance(self.output_file_prefix, str):
@@ -175,27 +190,35 @@ class Specifier(object):
         # Validate that each input file exists and is a regular file
         for ifile_name in self.input_file_list:
             if not ospath.isfile(ifile_name):
-                err_msg = "Input file " + str(ifile_name) + \
-                          " is not a regular file"
+                err_msg = "Input file {0} is not a regular file".format(ifile_name)
                 raise ValueError(err_msg)
 
         # Validate the value of the netcdf format string
         valid_formats = ['netcdf', 'netcdf4', 'netcdf4c']
         if self.netcdf_format not in valid_formats:
-            err_msg = "Output NetCDF file format " \
-                + str(self.netcdf_format) \
-                + " is not valid"
+            err_msg = "Invalid output NetCDF file format {0}".format(self.netcdf_format)
             raise ValueError(err_msg)
 
+        # Validate that format is compatible with compression
+        if (self.netcdf_format != "netcdf4c"):
+            if (self.netcdf_deflate != 0):
+                print("Warning: Ignoring compression because output file-format"
+                      "is '{0}'".format(self.netcdf_format))
+
+        
         # Validate the output file directory
-        abs_output_prefix = ospath.abspath(self.output_file_prefix)
-        abs_output_dir = ospath.dirname(abs_output_prefix)
-        if not ospath.isdir(abs_output_dir):
-            err_msg = "Output directory " + str(abs_output_dir) + \
-                " implied in output prefix " + \
-                str(self.output_file_prefix) + " is not valid"
+        invalid_chars = "/~!@#$%^&*():;?<>`+=[]{}"
+        for iv in invalid_chars:
+            if iv in self.output_file_prefix:
+                err_msg = "Character {0} not allowed in filename prefix".format(iv)
+                raise ValueError(err_msg)
+
+        if not ospath.isdir(self.output_directory):
+            err_msg = "Invalid output directory {0}".format(self.output_directory)
             raise ValueError(err_msg)
-        self.output_file_prefix = abs_output_prefix
+        
+        self.output_file_prefix = ospath.join(self.output_directory, \
+                                              self.output_file_prefix)
 
         # Validate the output file suffix string (should end in .nc)
         if (self.output_file_suffix[-3:] != '.nc'):

@@ -17,7 +17,7 @@ import itertools
 # Third-party imports
 import Nio
 import numpy
-from asaptools.simplecomm import create_comm, SimpleComm
+from asaptools.simplecomm import create_comm, SimpleComm, SimpleCommMPI
 from asaptools.timekeeper import TimeKeeper
 from asaptools.partition import WeightBalanced
 from asaptools.vprinter import VPrinter
@@ -99,12 +99,10 @@ def create_reshaper(specifier, serial=False, verbosity=1,
                                      once=once,
                                      simplecomm=simplecomm)
         else:
-            err_msg = 'Multiple specifiers of type ' + str(spec_type) \
-                + ' are not valid.'
+            err_msg = 'Multiple specifiers of type {0} are not valid'.format(spec_type)
             raise TypeError(err_msg)
     else:
-        err_msg = 'Specifier of type ' + str(type(specifier)) + ' is not a ' \
-            + 'valid Specifier object.'
+        err_msg = 'Specifier type {0} not a valid Specifier object'.format(type(specifier))
         raise TypeError(err_msg)
 
 
@@ -254,8 +252,10 @@ class Slice2SeriesReshaper(Reshaper):
             err_msg = "Once-file indicator must be True or False."
             raise TypeError(err_msg)
         if simplecomm is not None:
-            if simplecomm is not isinstance(simplecomm, SimpleComm):
-                err_msg = "Simple communicator object is not a SimpleComm"
+            if not (isinstance(simplecomm, SimpleComm) or \
+                    isinstance(simplecomm, SimpleCommMPI)):
+                err_msg = ("Simple communicator object is not a SimpleComm or ",
+                           "SimpleCommMPI")
                 raise TypeError(err_msg)
 
         # Whether to write a once file
@@ -306,7 +306,11 @@ class Slice2SeriesReshaper(Reshaper):
             opt.CompressionLevel = 0
         elif specifier.netcdf_format == 'netcdf4c':
             opt.Format = 'NetCDF4Classic'
-            opt.CompressionLevel = 1
+            opt.CompressionLevel = specifier.netcdf_deflate
+            if self._simplecomm.is_manager():
+                self._vprint('PyNIO compression level: {0}'.format(\
+                    specifier.netcdf_deflate), verbosity=2)
+
         self._nio_options = opt
         if self._simplecomm.is_manager():
             self._vprint('PyNIO options set', verbosity=2)
@@ -378,7 +382,7 @@ class Slice2SeriesReshaper(Reshaper):
         for dim in ifile.dimensions:
             if ifile.unlimited(dim):
                 self._unlimited_dim = dim
-                continue  # There can only be 1!
+                break  # There can only be 1!
         if self._unlimited_dim == None:
             err_msg = 'Unlimited dimension not identified.'
             raise LookupError(err_msg)
@@ -390,16 +394,16 @@ class Slice2SeriesReshaper(Reshaper):
         for i in range(len(self._input_files)):
             ifile = self._input_files[i]
             if self._unlimited_dim not in ifile.dimensions:
-                err_msg = 'Unlimited dimension not found in file (' \
-                    + specifier.input_file_list[i] + ')'
+                err_msg = 'Unlimited dimension not found in file ({0})'.\
+                          format(specifier.input_file_list[i])
                 raise LookupError(err_msg)
             if not ifile.unlimited(self._unlimited_dim):
-                err_msg = 'Unlimited dimension not unlimited in file (' \
-                    + specifier.input_file_list[i] + ')'
+                err_msg = 'Unlimited dimension not unlimited in file ({0})'.\
+                          format(specifier.input_file_list[i])
                 raise LookupError(err_msg)
             if self._unlimited_dim not in ifile.variables:
-                err_msg = 'Unlimited dimension variable not found in file (' \
-                    + specifier.input_file_list[i] + ')'
+                err_msg = 'Unlimited dimension variable not found in file ({0})'.\
+                          format(specifier.input_file_list[i])
                 raise LookupError(err_msg)
 
         # Make sure that the list of variables in each file is the same
@@ -412,8 +416,7 @@ class Slice2SeriesReshaper(Reshaper):
         if len(missing_vars) != 0:
             warning = "WARNING: The first input file has variables that are " \
                 + "not in all input files:" + os.linesep + '   '
-            for var in missing_vars:
-                warning += ' ' + str(var)
+            warning += " ".join(missing_vars)
             self._vprint(warning, header=True, verbosity=1)
 
     def _sort_input_files_by_time(self, specifier):
@@ -473,9 +476,8 @@ class Slice2SeriesReshaper(Reshaper):
         # do not overlap)
         for i in order[:-1]:
             if new_values[i][-1] >= new_values[i + 1][0]:
-                err_msg = 'Times in input files ' + str(new_filenames[i]) \
-                    + ' and ' + str(new_filenames[i + 1]) + ' appear to ' \
-                    + 'overlap.'
+                err_msg = 'Times in input files {0} and {1} appear to overlap'
+                err_msg = err_msg.format(new_filenames[i], new_filenames[i+1])
                 raise ValueError(err_msg)
 
         # Now that this is validated, let's string together the numpy array
@@ -580,7 +582,7 @@ class Slice2SeriesReshaper(Reshaper):
         if overwrite:
             if self._simplecomm.is_manager():
                 self._vprint('WARNING: Deleting existing output files for '
-                             'time-series variables: ' + str(existing),
+                             'time-series variables: {0}'.format(existing),
                              verbosity=1)
             for variable in existing:
                 os.remove(self._time_series_filenames[variable])
@@ -590,15 +592,15 @@ class Slice2SeriesReshaper(Reshaper):
         elif skip_existing:
             if self._simplecomm.is_manager():
                 self._vprint('WARNING: Skipping time-series variables with '
-                             'existing output files: ' + str(existing),
+                             'existing output files: {0}'.format(existing),
                              verbosity=1)
             for variable in existing:
                 self._time_series_variables.pop(variable)
 
         # Otherwise, throw an exception if any existing output files are found
         elif len(existing) > 0:
-            err_msg = "Found existing output files for time-series " + \
-                "variables:" + str(existing)
+            err_msg = ("Found existing output files for time-series "
+                       "variables: {0}").format(existing)
             raise RuntimeError(err_msg)
 
     def convert(self, output_limit=0):
@@ -643,7 +645,7 @@ class Slice2SeriesReshaper(Reshaper):
             tsv_names_loc = tsv_names_loc[0:output_limit]
 
         # Print partitions for all ranks
-        dbg_msg = 'Local time-series variables are ' + str(tsv_names_loc)
+        dbg_msg = 'Local time-series variables are {0}'.format(tsv_names_loc)
         self._vprint(dbg_msg, header=True, verbosity=2)
 
         # Reset all of the timer values (as it is possible that there are no
@@ -689,7 +691,7 @@ class Slice2SeriesReshaper(Reshaper):
 
             # Determine the output file name for this variable
             out_filename = self._time_series_filenames[out_name]
-            dbg_msg = 'Creating output file for variable: ' + out_name
+            dbg_msg = 'Creating output file for variable: {0}'.format(out_name)
             if is_once_file:
                 dbg_msg = 'Creating "once" file.'
             self._vprint(dbg_msg, header=True, verbosity=1)
@@ -698,7 +700,7 @@ class Slice2SeriesReshaper(Reshaper):
             # NOTE: If the output file already exists, abort!
             self._timer.start('Open Output Files')
             if os.path.exists(out_filename):
-                err_msg = 'Found existing output file: ' + out_filename
+                err_msg = 'Found existing output file: {0}'.format(out_filename)
                 raise OSError(err_msg)
             out_file = Nio.open_file(out_filename, 'w',
                                      options=self._nio_options)
@@ -750,7 +752,7 @@ class Slice2SeriesReshaper(Reshaper):
         for out_name, out_file in out_files.iteritems():
             is_once_file, write_meta, write_tser = _get_once_info(out_name)
 
-            dbg_msg = 'Writing output file for variable: ' + out_name
+            dbg_msg = 'Writing output file for variable: {0}'.format(out_name)
             if is_once_file:
                 dbg_msg = 'Writing "once" file.'
             self._vprint(dbg_msg, header=True, verbosity=1)
@@ -835,7 +837,7 @@ class Slice2SeriesReshaper(Reshaper):
             self._timer.start('Close Output Files')
             out_file.close()
             self._timer.stop('Close Output Files')
-            dbg_msg = 'Closed output file for variable: ' + out_name
+            dbg_msg = 'Closed output file for variable: {0}'.format(out_name)
             if is_once_file:
                 dbg_msg = 'Closed "once" file.'
             self._vprint(dbg_msg, header=True, verbosity=1)

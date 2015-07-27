@@ -2,24 +2,29 @@
 """
 This script provides the command-line interface (CLI) to the PyReshaper
 
-This script uses the optparse module, which has been deprecated since
-Python version 2.7 with the introduction of the argparse module, which is
-more flexible and capable.  However, since the PyReshaper module needs to
-work on systems with only Python 2.6 available, we use the optparse module.
+This script uses the optparse module for Python 2.6 and the newer argparse
+module for Python 2.7.
 
 Copyright 2015, University Corporation for Atmospheric Research
 See the LICENSE.rst file for details
 """
 
-import optparse
-from pyreshaper import specification
-from pyreshaper import reshaper
+import os.path as ospath
+from pyreshaper.specification import create_specifier
+from pyreshaper.reshaper import create_reshaper
+
+try:
+  import argparse
+  is_python_26 = False
+except ImportError:
+  import optparse
+  is_python_26 = True
 
 
 #==============================================================================
 # Command-line Interface
 #==============================================================================
-def cli():
+def cli_2_6():
     parser = optparse.OptionParser()
     parser.add_option('-f', '--netcdf_format', default='netcdf4c',
                       choices=['netcdf', 'netcdf4', 'netcdf4c'],
@@ -33,13 +38,17 @@ def cli():
     parser.add_option('-s', '--output_suffix', default='.nc',
                       help='String suffix for all output files.  The output file '
                            'will be named according to the rule: '
-                           'output_prefix + variable_name + output_suffix '
+                           'output_direc + output_prefix + variable_name + output_suffix '
                            '[Default: ".nc"]')
     parser.add_option('-m', '--metadata', action='append', default=[],
                       help='Names of a variable to be included in all output '
                            'files.  There may be more than one --metadata (-m) '
                            'option given, and each one is appended to a list.  '
                            '[Default: none]')
+    parser.add_option('-d', '--deflate', default=3, type=int,
+                      help='Compression level for the output files. Only used '
+                           'when netcdf_format = netcdf4c.'
+                           '[Default: 3]')
     parser.add_option('--serial', default=False,
                       action='store_true', dest='serial',
                       help='Whether to run in serial (True) or parallel (False). '
@@ -71,31 +80,117 @@ def cli():
     return parser.parse_args()
 
 
+def cli_2_7():
+    parser = argparse.ArgumentParser(description="Convert CESM slices to series")
+    parser.add_argument("output_dir", type=str, action='store',
+                        help="Directory to write output files into")
+    parser.add_argument("input_files", type=str, nargs="+",
+                        help="Input files to process")
+    parser.add_argument('-f', '--netcdf_format', default='netcdf4c', type=str, action='store',
+                      choices=['netcdf', 'netcdf4', 'netcdf4c'],
+                      help='NetCDF file format to be used for all output files. '
+                           '[Default: "netcdf4c"]')
+    parser.add_argument('-p', '--output_prefix', default='tseries.', type=str, action='store',
+                      help='String prefix for all output files.  The output file '
+                           'will be named according to the rule: '
+                           'output_prefix + variable_name + output_suffix '
+                           '[Default: "tseries."]')
+    parser.add_argument('-s', '--output_suffix', default='.nc', type=str, action='store',
+                      help='String suffix for all output files.  The output file '
+                           'will be named according to the rule: '
+                           'output_direc + output_prefix + variable_name + output_suffix '
+                           '[Default: ".nc"]')
+    parser.add_argument('-m', '--metadata', type=str, nargs="+", default=[],
+                      help='Names of a variable to be included in all output '
+                           'files. '
+                           '[Default: none]')
+    parser.add_argument('-d', '--deflate', default=3, type=int, action='store',
+                      help='Compression level for the output files. Only used '
+                           'when netcdf_format = netcdf4c.'
+                           '[Default: 3]')
+    parser.add_argument('--serial', default=False,
+                      action='store_true', dest='serial',
+                      help='Whether to run in serial (True) or parallel (False). '
+                           '[Default: False]')
+    parser.add_argument('--once', default=False,
+                      action='store_true', dest='once',
+                      help='Whether to write a "once" file with all metadata. '
+                           '[Default: False]')
+    parser.add_argument('--skip_existing', default=False,
+                      action='store_true', dest='skip_existing',
+                      help='Whether to skip time-series generation for '
+                           'variables with existing output files. '
+                           '[Default: False]')
+    parser.add_argument('--overwrite', default=False,
+                      action='store_true', dest='overwrite',
+                      help='Whether to overwrite existing output files. '
+                           '[Default: False]')
+    parser.add_argument('-v', '--verbosity', default=1, type=int, action='store',
+                      help='Verbosity level for level of output.  A value of 0 '
+                           'means no output, and a value greater than 0 means '
+                           'more output detail. [Default: 1]')
+    parser.add_argument('-l', '--limit', default=0, type=int, action='store',
+                      help='The limit on the number of time-series files per '
+                           'processor to write.  Useful when debugging.  A '
+                           'limit of 0 means write all output files.'
+                           '[Default: 0]')
+
+    # Parse the CLI options and assemble the Reshaper inputs
+    # print parser.parse_args()
+    return parser.parse_args()
+
+
 #==============================================================================
 # Main script
 #==============================================================================
-def main(options, input_file_list):
-
+def main_2_6(options, output_directory, input_file_list):
+    # Main run function for python 2.6
     # Create the input object for the Reshaper
-    spec = specification.create_specifier()
-
-    # Add input to the specifier
-    spec.input_file_list = input_file_list
-    spec.netcdf_format = options.netcdf_format
-    spec.output_file_prefix = options.output_prefix
-    spec.output_file_suffix = options.output_suffix
-    spec.time_variant_metadata = options.metadata
+    spec = create_specifier(infiles=input_file_list,
+                            ncfmt=options.netcdf_format,
+                            deflate=options.deflate,
+                            prefix=options.output_prefix,
+                            suffix=options.output_suffix,
+                            outdir=output_directory,
+                            metadata=options.metadata)
 
     # Create the PyReshaper object
-    reshpr = reshaper.create_reshaper(spec,
-                                      serial=options.serial,
-                                      verbosity=options.verbosity,
-                                      skip_existing=options.skip_existing,
-                                      overwrite=options.overwrite,
-                                      once=options.once)
+    reshpr = create_reshaper(spec,
+                             serial=options.serial,
+                             verbosity=options.verbosity,
+                             skip_existing=options.skip_existing,
+                             overwrite=options.overwrite,
+                             once=options.once)
 
     # Run the conversion (slice-to-series) process
     reshpr.convert(output_limit=options.limit)
+
+    # Print timing diagnostics
+    reshpr.print_diagnostics()
+
+
+
+def main_2_7(args):
+    # Main run function for python 2.7
+    # Create the input object for the Reshaper
+    spec = create_specifier(infiles=args.input_files,
+                            ncfmt=args.netcdf_format,
+                            deflate=args.deflate,
+                            prefix=args.output_prefix,
+                            suffix=args.output_suffix,
+                            outdir=args.output_dir,
+                            metadata=args.metadata)
+
+    # Create the PyReshaper object
+    reshpr = create_reshaper(spec,
+                             serial=args.serial,
+                             verbosity=args.verbosity,
+                             skip_existing=args.skip_existing,
+                             overwrite=args.overwrite,
+                             once=args.once)
+
+    # Run the conversion (slice-to-series) process
+    reshpr.convert(output_limit=args.limit)
 
     # Print timing diagnostics
     reshpr.print_diagnostics()
@@ -105,5 +200,35 @@ def main(options, input_file_list):
 # Command-line Opeartion
 #==============================================================================
 if __name__ == '__main__':
-    options, input_file_list = cli()
-    main(options, input_file_list)
+    
+    if is_python_26:
+      # Case for python 2.6
+      options, input_file_list = cli_2_6()
+
+      # Checking right away if input files specified
+      if input_file_list == []:
+        err_msg = "No input files specified"
+        raise ValueError(err_msg)
+
+      # Checking for output directories
+      output_directory = input_file_list[0]
+      if not ospath.isdir(output_directory):
+        err_msg = "Invalid output directory {0}. ".format(output_directory)
+        err_msg += "First positional argument must be the output directory."
+        raise ValueError(err_msg)
+
+      main_2_6(options, output_directory, input_file_list[1:])
+
+    else:
+      # Case for python 2.7
+      args = cli_2_7()
+
+      # No need to do checks here for positional arguments as this is 
+      # automatically taken care of by argparse
+
+      # Checking for output directories
+      if not ospath.isdir(args.output_dir):
+        raise ValueError("Invalid output directory {0}. ".format(args.output_dir))
+
+      main_2_7(args)
+
