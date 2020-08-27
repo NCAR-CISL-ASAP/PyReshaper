@@ -422,7 +422,7 @@ class NCVariable(object):
         if self.shape == ():
             self.assign_value(value)
         elif self.datatype == numpy.dtype('c') and self._backend == 'Nio' and get_backend_version(self._backend) < (1, 5, 0):
-            print get_backend_version()
+            print("{}".format( get_backend_version()))
             key_t = numpy.index_exp[key]
             if self.ndim < len(key_t):
                 raise KeyError('Too many indices specified for variable')
