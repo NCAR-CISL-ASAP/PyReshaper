@@ -22,7 +22,7 @@ limitations under the License.
 """
 
 # Built-in imports
-import cPickle as pickle
+import pickle
 from os import path as ospath
 
 
