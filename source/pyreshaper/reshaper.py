@@ -140,7 +140,7 @@ def _pprint_dictionary(title, dictionary, order=None):
         str: A string with the pretty-printed dictionary data
     """
     # Type checking
-    if not isinstance(title, basestring):
+    if not isinstance(title, str):
         err_msg = 'Title must be a string type'
         raise TypeError(err_msg)
     if not isinstance(dictionary, dict):
@@ -823,7 +823,7 @@ class Reshaper(object):
             err_msg = 'Chunks must be specified with a dictionary'
             raise TypeError(err_msg)
         for key, value in rchunks.items():
-            if not isinstance(key, basestring):
+            if not isinstance(key, str):
                 err_msg = 'Chunks dictionary must have string-type keys'
                 raise TypeError(err_msg)
             if not isinstance(value, int):

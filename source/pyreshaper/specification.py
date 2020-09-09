@@ -165,12 +165,12 @@ class Specifier(object):
 
         # Validate that each input file name is a string
         for ifile_name in self.input_file_list:
-            if not isinstance(ifile_name, basestring):
+            if not isinstance(ifile_name, str):
                 err_msg = "Input file names must be given as strings"
                 raise TypeError(err_msg)
 
         # Validate the netcdf format string
-        if not isinstance(self.netcdf_format, basestring):
+        if not isinstance(self.netcdf_format, str):
             err_msg = "NetCDF format must be given as a string"
             raise TypeError(err_msg)
 
@@ -180,12 +180,12 @@ class Specifier(object):
             raise TypeError(err_msg)
 
         # Validate the output file prefix
-        if not isinstance(self.output_file_prefix, basestring):
+        if not isinstance(self.output_file_prefix, str):
             err_msg = "Output file prefix must be given as a string"
             raise TypeError(err_msg)
 
         # Validate the output file suffix
-        if not isinstance(self.output_file_suffix, basestring):
+        if not isinstance(self.output_file_suffix, str):
             err_msg = "Output file suffix must be given as a string"
             raise TypeError(err_msg)
 
@@ -195,7 +195,7 @@ class Specifier(object):
                 err_msg = "Time-series variables must be a list or None"
                 raise TypeError(err_msg)
             for var_name in self.time_series:
-                if not isinstance(var_name, basestring):
+                if not isinstance(var_name, str):
                     err_msg = "Time-series variable names must be given as strings"
                     raise TypeError(err_msg)
 
@@ -206,7 +206,7 @@ class Specifier(object):
 
         # Validate the type of each time-variant metadata variable name
         for var_name in self.time_variant_metadata:
-            if not isinstance(var_name, basestring):
+            if not isinstance(var_name, str):
                 err_msg = "Time-variant metadata variable names must be given as strings"
                 raise TypeError(err_msg)
 
@@ -216,7 +216,7 @@ class Specifier(object):
             raise TypeError(err_msg)
 
         # Validate the type of the backend
-        if not isinstance(self.io_backend, basestring):
+        if not isinstance(self.io_backend, str):
             err_msg = "I/O backend must be given as a string"
             raise TypeError(err_msg)
 
